@@ -13,7 +13,8 @@ export const sentryAstro = (options: SentryOptions = {}): AstroIntegration => {
   return {
     name: PKG_NAME,
     hooks: {
-      'astro:config:setup': async ({ updateConfig, injectScript }) => {
+      // eslint-disable-next-line complexity
+      'astro:config:setup': async ({ updateConfig, injectScript, addMiddleware, config }) => {
         // The third param here enables loading of all env vars, regardless of prefix
         // see: https://main.vitejs.dev/config/#using-environment-variables-in-config
 
@@ -67,6 +68,20 @@ export const sentryAstro = (options: SentryOptions = {}): AstroIntegration => {
         } else {
           options.debug && console.log('[sentry-astro] Using default server init.');
           injectScript('page-ssr', buildServerSnippet(options || {}));
+        }
+
+        const isSSR = config && (config.output === 'server' || config.output === 'hybrid');
+        const shouldAddMiddleware = options.autoInstrumentation?.requestHandler !== false;
+
+        // Guarding calling the addMiddleware function because it was only introduced in astro@3.5.0
+        // Users on older versions of astro will need to add the middleware manually.
+        const supportsAddMiddleware = typeof addMiddleware === 'function';
+
+        if (supportsAddMiddleware && isSSR && shouldAddMiddleware) {
+          addMiddleware({
+            order: 'pre',
+            entrypoint: '@sentry/astro/middleware',
+          });
         }
       },
     },
