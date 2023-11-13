@@ -72,7 +72,4 @@ export interface HandlerDataError {
   url?: string;
 }
 
-export interface HandlerDataUnhandledRejection {
-  reason?: Error;
-  detail?: { reason?: Error };
-}
+export type HandlerDataUnhandledRejection = unknown;
