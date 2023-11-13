@@ -1,8 +1,9 @@
 /* eslint-disable max-lines */
 import { getCurrentHub, getDynamicSamplingContextFromClient, hasTracingEnabled } from '@sentry/core';
-import type { Client, Scope, Span } from '@sentry/types';
+import type { Client, HandlerDataFetch, HandlerDataXhr, Scope, SentryWrappedXMLHttpRequest, Span } from '@sentry/types';
 import {
-  addInstrumentationHandler,
+  addFetchInstrumentationHandler,
+  addXhrInstrumentationHandler,
   BAGGAGE_HEADER_NAME,
   browserPerformanceTimeOrigin,
   dynamicSamplingContextToSentryBaggageHeader,
@@ -66,44 +67,25 @@ export interface RequestInstrumentationOptions {
   shouldCreateSpanForRequest?(this: void, url: string): boolean;
 }
 
-/** Data returned from fetch callback */
-export interface FetchData {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  args: any[]; // the arguments passed to the fetch call itself
-  fetchData?: {
-    method: string;
-    url: string;
-    // span_id
-    __span?: string;
+/** Exported only for tests. */
+export type ExtendedFetchData = HandlerDataFetch['fetchData'] & {
+  // span_id
+  __span?: string;
+};
+
+interface FetchResponse {
+  status: number;
+  headers: {
+    get: (key: string) => string | undefined;
   };
-
-  // TODO Should this be unknown instead? If we vendor types, make it a Response
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  response?: any;
-  error?: unknown;
-
-  startTimestamp: number;
-  endTimestamp?: number;
 }
 
-/** Data returned from XHR request */
-export interface XHRData {
-  xhr?: {
-    [SENTRY_XHR_DATA_KEY]?: {
-      method: string;
-      url: string;
-      status_code: number;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      data: Record<string, any>;
-    };
-    __sentry_xhr_span_id__?: string;
-    setRequestHeader?: (key: string, val: string) => void;
-    getRequestHeader?: (key: string) => string;
-    __sentry_own_request__?: boolean;
-  };
-  startTimestamp: number;
-  endTimestamp?: number;
-}
+/** Exported only for tests. */
+export type ExtendedSentryWrappedXMLHttpRequest = SentryWrappedXMLHttpRequest & {
+  __sentry_xhr_span_id__?: string;
+  setRequestHeader?: (key: string, val: string) => void;
+  getRequestHeader?: (key: string) => string;
+};
 
 type PolymorphicRequestHeaders =
   | Record<string, string | undefined>
@@ -154,7 +136,7 @@ export function instrumentOutgoingRequests(_options?: Partial<RequestInstrumenta
   const spans: Record<string, Span> = {};
 
   if (traceFetch) {
-    addInstrumentationHandler('fetch', (handlerData: FetchData) => {
+    addFetchInstrumentationHandler(handlerData => {
       const createdSpan = fetchCallback(handlerData, shouldCreateSpan, shouldAttachHeadersWithTargets, spans);
       if (enableHTTPTimings && createdSpan) {
         addHTTPTimings(createdSpan);
@@ -163,7 +145,7 @@ export function instrumentOutgoingRequests(_options?: Partial<RequestInstrumenta
   }
 
   if (traceXHR) {
-    addInstrumentationHandler('xhr', (handlerData: XHRData) => {
+    addXhrInstrumentationHandler(handlerData => {
       const createdSpan = xhrCallback(handlerData, shouldCreateSpan, shouldAttachHeadersWithTargets, spans);
       if (enableHTTPTimings && createdSpan) {
         addHTTPTimings(createdSpan);
@@ -282,7 +264,7 @@ export function shouldAttachHeaders(url: string, tracePropagationTargets: (strin
  * @returns Span if a span was created, otherwise void.
  */
 export function fetchCallback(
-  handlerData: FetchData,
+  handlerData: HandlerDataFetch,
   shouldCreateSpan: (url: string) => boolean,
   shouldAttachHeaders: (url: string) => boolean,
   spans: Record<string, Span>,
@@ -294,21 +276,18 @@ export function fetchCallback(
   const shouldCreateSpanResult = shouldCreateSpan(handlerData.fetchData.url);
 
   if (handlerData.endTimestamp && shouldCreateSpanResult) {
-    const spanId = handlerData.fetchData.__span;
+    const spanId = (handlerData.fetchData as ExtendedFetchData).__span;
+    const response = handlerData.response as FetchResponse;
     if (!spanId) return;
 
     const span = spans[spanId];
     if (span) {
-      if (handlerData.response) {
-        // TODO (kmclb) remove this once types PR goes through
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        span.setHttpStatus(handlerData.response.status);
+      if (response) {
+        span.setHttpStatus(response.status);
 
-        const contentLength: string =
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-          handlerData.response && handlerData.response.headers && handlerData.response.headers.get('content-length');
+        const contentLength = response.headers && response.headers.get('content-length');
 
-        const contentLengthNum = parseInt(contentLength);
+        const contentLengthNum = contentLength ? parseInt(contentLength) : 0;
         if (contentLengthNum > 0) {
           span.setData('http.response_content_length', contentLengthNum);
         }
@@ -345,7 +324,7 @@ export function fetchCallback(
       : undefined;
 
   if (span) {
-    handlerData.fetchData.__span = span.spanId;
+    (handlerData.fetchData as ExtendedFetchData).__span = span.spanId;
     spans[span.spanId] = span;
   }
 
@@ -452,12 +431,12 @@ export function addTracingHeadersToFetchRequest(
  */
 // eslint-disable-next-line complexity
 export function xhrCallback(
-  handlerData: XHRData,
+  handlerData: HandlerDataXhr,
   shouldCreateSpan: (url: string) => boolean,
   shouldAttachHeaders: (url: string) => boolean,
   spans: Record<string, Span>,
 ): Span | undefined {
-  const xhr = handlerData.xhr;
+  const xhr = handlerData.xhr as ExtendedSentryWrappedXMLHttpRequest;
   const sentryXhrData = xhr && xhr[SENTRY_XHR_DATA_KEY];
 
   if (!hasTracingEnabled() || (xhr && xhr.__sentry_own_request__) || !xhr || !sentryXhrData) {
@@ -472,7 +451,7 @@ export function xhrCallback(
     if (!spanId) return;
 
     const span = spans[spanId];
-    if (span) {
+    if (span && sentryXhrData.status_code !== undefined) {
       span.setHttpStatus(sentryXhrData.status_code);
       span.finish();
 
@@ -490,7 +469,6 @@ export function xhrCallback(
     shouldCreateSpanResult && parentSpan
       ? parentSpan.startChild({
           data: {
-            ...sentryXhrData.data,
             type: 'xhr',
             'http.method': sentryXhrData.method,
             url: sentryXhrData.url,
@@ -527,7 +505,7 @@ export function xhrCallback(
 }
 
 function setHeaderOnXhr(
-  xhr: NonNullable<XHRData['xhr']>,
+  xhr: ExtendedSentryWrappedXMLHttpRequest,
   sentryTraceHeader: string,
   sentryBaggageHeader: string | undefined,
 ): void {

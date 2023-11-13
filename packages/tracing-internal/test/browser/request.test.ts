@@ -1,12 +1,13 @@
 /* eslint-disable deprecation/deprecation */
 import * as sentryCore from '@sentry/core';
+import type { HandlerDataFetch, HandlerDataXhr } from '@sentry/types';
 import * as utils from '@sentry/utils';
 import { SENTRY_XHR_DATA_KEY } from '@sentry/utils';
 
 import type { Transaction } from '../../../tracing/src';
 import { addExtensionMethods, Span, spanStatusfromHttpCode } from '../../../tracing/src';
 import { getDefaultBrowserClientOptions } from '../../../tracing/test/testutils';
-import type { FetchData, XHRData } from '../../src/browser/request';
+import type { ExtendedFetchData, ExtendedSentryWrappedXMLHttpRequest } from '../../src/browser/request';
 import {
   extractNetworkProtocol,
   fetchCallback,
@@ -24,7 +25,6 @@ beforeAll(() => {
 });
 
 const hasTracingEnabled = jest.spyOn(sentryCore, 'hasTracingEnabled');
-const addInstrumentationHandler = jest.spyOn(utils, 'addInstrumentationHandler');
 const setRequestHeader = jest.fn();
 
 describe('instrumentOutgoingRequests', () => {
@@ -33,22 +33,29 @@ describe('instrumentOutgoingRequests', () => {
   });
 
   it('instruments fetch and xhr requests', () => {
+    const addFetchSpy = jest.spyOn(utils, 'addFetchInstrumentationHandler');
+    const addXhrSpy = jest.spyOn(utils, 'addXhrInstrumentationHandler');
+
     instrumentOutgoingRequests();
 
-    expect(addInstrumentationHandler).toHaveBeenCalledWith('fetch', expect.any(Function));
-    expect(addInstrumentationHandler).toHaveBeenCalledWith('xhr', expect.any(Function));
+    expect(addFetchSpy).toHaveBeenCalledWith(expect.any(Function));
+    expect(addXhrSpy).toHaveBeenCalledWith(expect.any(Function));
   });
 
   it('does not instrument fetch requests if traceFetch is false', () => {
+    const addFetchSpy = jest.spyOn(utils, 'addFetchInstrumentationHandler');
+
     instrumentOutgoingRequests({ traceFetch: false });
 
-    expect(addInstrumentationHandler).not.toHaveBeenCalledWith('fetch', expect.any(Function));
+    expect(addFetchSpy).not.toHaveBeenCalled();
   });
 
   it('does not instrument xhr requests if traceXHR is false', () => {
+    const addXhrSpy = jest.spyOn(utils, 'addXhrInstrumentationHandler');
+
     instrumentOutgoingRequests({ traceXHR: false });
 
-    expect(addInstrumentationHandler).not.toHaveBeenCalledWith('xhr', expect.any(Function));
+    expect(addXhrSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -76,7 +83,7 @@ describe('callbacks', () => {
   });
 
   describe('fetchCallback()', () => {
-    let fetchHandlerData: FetchData;
+    let fetchHandlerData: HandlerDataFetch;
 
     const fetchSpan = {
       data: {
@@ -126,6 +133,7 @@ describe('callbacks', () => {
     );
 
     it('adds neither fetch request spans nor fetch request headers if there is no fetch data in handler data', () => {
+      // @ts-expect-error We want to test this faulty behaviour specifically
       delete fetchHandlerData.fetchData;
       const spans = {};
 
@@ -166,7 +174,8 @@ describe('callbacks', () => {
       });
       expect(newSpan.description).toBe('GET http://dogs.are.great/');
       expect(newSpan.op).toBe('http.client');
-      expect(fetchHandlerData.fetchData?.__span).toBeDefined();
+      const spanId = (fetchHandlerData.fetchData as ExtendedFetchData | undefined)?.__span;
+      expect(spanId).toBeDefined();
 
       const postRequestFetchHandlerData = {
         ...fetchHandlerData,
@@ -272,7 +281,7 @@ describe('callbacks', () => {
   });
 
   describe('xhrCallback()', () => {
-    let xhrHandlerData: XHRData;
+    let xhrHandlerData: HandlerDataXhr;
 
     const xhrSpan = {
       data: {
@@ -290,16 +299,17 @@ describe('callbacks', () => {
 
     beforeEach(() => {
       xhrHandlerData = {
+        args: ['GET', 'http://dogs.are.great/'],
         xhr: {
           [SENTRY_XHR_DATA_KEY]: {
             method: 'GET',
             url: 'http://dogs.are.great/',
             status_code: 200,
-            data: {},
+            request_headers: {},
           },
           __sentry_xhr_span_id__: '1231201211212012',
           setRequestHeader,
-        },
+        } as ExtendedSentryWrappedXMLHttpRequest,
         startTimestamp,
       };
     });
@@ -355,8 +365,9 @@ describe('callbacks', () => {
       });
       expect(newSpan.description).toBe('GET http://dogs.are.great/');
       expect(newSpan.op).toBe('http.client');
-      expect(xhrHandlerData.xhr?.__sentry_xhr_span_id__).toBeDefined();
-      expect(xhrHandlerData.xhr?.__sentry_xhr_span_id__).toEqual(newSpan?.spanId);
+      const spanId = (xhrHandlerData.xhr as ExtendedSentryWrappedXMLHttpRequest | undefined)?.__sentry_xhr_span_id__;
+      expect(spanId).toBeDefined();
+      expect(spanId).toEqual(newSpan?.spanId);
 
       const postRequestXHRHandlerData = {
         ...xhrHandlerData,
@@ -394,12 +405,13 @@ describe('callbacks', () => {
     it('ignores response with no associated span', () => {
       // the request might be missed somehow. E.g. if it was sent before tracing gets enabled.
 
-      const postRequestXHRHandlerData = {
+      const postRequestXHRHandlerData: HandlerDataXhr = {
         ...{
           xhr: {
             [SENTRY_XHR_DATA_KEY]: xhrHandlerData.xhr?.[SENTRY_XHR_DATA_KEY],
           },
         },
+        args: ['GET', 'http://dogs.are.great/'],
         startTimestamp,
         endTimestamp,
       };
