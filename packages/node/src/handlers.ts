@@ -11,7 +11,6 @@ import {
 import type { Span } from '@sentry/types';
 import type { AddRequestDataToEventOptions } from '@sentry/utils';
 import {
-  addExceptionMechanism,
   addRequestDataToTransaction,
   dropUndefinedKeys,
   extractPathForTransaction,
@@ -302,12 +301,7 @@ export function errorHandler(options?: {
           }
         }
 
-        _scope.addEventProcessor(event => {
-          addExceptionMechanism(event, { type: 'middleware', handled: false });
-          return event;
-        });
-
-        const eventId = captureException(error);
+        const eventId = captureException(error, { mechanism: { type: 'middleware', handled: false } });
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         (res as any).sentry = eventId;
         next(error);
@@ -371,16 +365,7 @@ export function trpcMiddleware(options: SentryTrpcMiddlewareOptions = {}) {
 
     function handleErrorCase(e: unknown): void {
       if (shouldCaptureError(e)) {
-        captureException(e, scope => {
-          scope.addEventProcessor(event => {
-            addExceptionMechanism(event, {
-              handled: false,
-            });
-            return event;
-          });
-
-          return scope;
-        });
+        captureException(e, { mechanism: { handled: false } });
       }
     }
 
