@@ -23,6 +23,7 @@
     "access": "public"
   },
   "dependencies": {
+    "@sentry-internal/feedback": "7.81.0",
     "@sentry-internal/tracing": "7.81.0",
     "@sentry/core": "7.81.0",
     "@sentry/replay": "7.81.0",
