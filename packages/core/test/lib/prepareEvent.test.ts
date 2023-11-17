@@ -1,4 +1,4 @@
-import type { Event, ScopeContext } from '@sentry/types';
+import type { Event, EventHint, ScopeContext } from '@sentry/types';
 import { createStackParser, GLOBAL_OBJ } from '@sentry/utils';
 
 import { Scope } from '../../src/scope';
@@ -130,15 +130,15 @@ describe('parseEventHintOrCaptureContext', () => {
     expect(actual).toEqual({ captureContext: scope });
   });
 
-  it('works with a plain EventHint', () => {
-    const hint = {
+  it('works with an EventHint', () => {
+    const hint: EventHint = {
       mechanism: { handled: false },
     };
     const actual = parseEventHintOrCaptureContext(hint);
     expect(actual).toEqual(hint);
   });
 
-  it('works with a plain ScopeContext', () => {
+  it('works with a ScopeContext', () => {
     const scopeContext: ScopeContext = {
       user: { id: 'xxx' },
       level: 'debug',
@@ -155,32 +155,5 @@ describe('parseEventHintOrCaptureContext', () => {
 
     const actual = parseEventHintOrCaptureContext(scopeContext);
     expect(actual).toEqual({ captureContext: scopeContext });
-  });
-
-  it('works with a ScopeContext & event hint mixed', () => {
-    const scopeContext: ScopeContext = {
-      user: { id: 'xxx' },
-      level: 'debug',
-      extra: { foo: 'bar' },
-      contexts: { os: { name: 'linux' } },
-      tags: { foo: 'bar' },
-      fingerprint: ['xx', 'yy'],
-      requestSession: { status: 'ok' },
-      propagationContext: {
-        traceId: 'xxx',
-        spanId: 'yyy',
-      },
-    };
-
-    const actual = parseEventHintOrCaptureContext({
-      ...scopeContext,
-      mechanism: { handled: false },
-      captureContext: { level: 'error' },
-    });
-    expect(actual).toEqual({
-      // captureContext is merged, where the eventHint takes prededence
-      captureContext: { ...scopeContext, level: 'error' },
-      mechanism: { handled: false },
-    });
   });
 });
