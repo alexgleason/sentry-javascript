@@ -1,4 +1,8 @@
-import { BrowserTracing as BrowserTracingShim, Feedback as FeedbackShim, Replay as ReplayShim } from '@sentry-internal/integration-shims';
+import {
+  BrowserTracing as BrowserTracingShim,
+  Feedback as FeedbackShim,
+  Replay as ReplayShim,
+} from '@sentry-internal/integration-shims';
 
 import * as TracingBundle from '../../src/index.bundle';
 

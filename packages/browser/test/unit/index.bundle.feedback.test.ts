@@ -22,4 +22,4 @@ describe('index.bundle.feedback', () => {
 
     expect(TracingReplayBundle.Feedback).toBe(Feedback);
   });
-);
+});

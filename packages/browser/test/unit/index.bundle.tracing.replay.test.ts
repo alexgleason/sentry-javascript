@@ -1,4 +1,4 @@
-import {Feedback as FeedbackShim} from '@sentry-internal/integration-shims'
+import { Feedback as FeedbackShim } from '@sentry-internal/integration-shims';
 import { BrowserTracing } from '@sentry-internal/tracing';
 import { Replay } from '@sentry/browser';
 
