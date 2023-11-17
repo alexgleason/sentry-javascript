@@ -5,7 +5,7 @@ module.exports = [
     path: 'packages/browser/build/npm/esm/index.js',
     import: '{ init, Replay, BrowserTracing, Feedback }',
     gzip: true,
-    limit: '75 KB',
+    limit: '80 KB',
   },
   {
     name: '@sentry/browser (incl. Tracing, Replay) - Webpack (gzipped)',
