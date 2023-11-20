@@ -1,7 +1,7 @@
 import { BrowserTracing } from '@sentry-internal/tracing';
 import { Feedback, Replay } from '@sentry/browser';
 
-import * as TracingReplayFeedbackBundle from '../../src/index.bundle.tracing.replay';
+import * as TracingReplayFeedbackBundle from '../../src/index.bundle.tracing.replay.feedback';
 
 describe('index.bundle.tracing.replay.feedback', () => {
   it('has correct exports', () => {
